@@ -1,7 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OnSale.Common.Entities;
 using OnSale.Common.Enums;
+using OnSale.Common.Responses;
 using OnSale.Web.Data;
 using OnSale.Web.Data.Entities;
 using OnSale.Web.Helpers;
@@ -19,18 +21,21 @@ namespace OnSale.Web.Controllers
 
         private readonly DataContext _context;
         private readonly ICombosHelper _combosHelper;
+        private readonly IMailHelper _mailHelper;
         private readonly IBlobHelper _blobHelper;
 
+        public AccountController(IUserHelper userHelper, 
+                                    DataContext context, 
+                                    ICombosHelper combosHelper,
+                                    IBlobHelper blobHelper,
+                                    IMailHelper mailHelper)
 
-
-        public AccountController(IUserHelper userHelper, DataContext context, ICombosHelper combosHelper,IBlobHelper blobHelper)
-
-        {
+                                        {
             _context = context;
             _userHelper = userHelper;
             _combosHelper = combosHelper;
             _blobHelper = blobHelper;
-
+            _mailHelper = mailHelper;
         }
 
         public IActionResult Login()
@@ -116,19 +121,41 @@ namespace OnSale.Web.Controllers
                     return View(model);
                 }
 
-                LoginViewModel loginViewModel = new LoginViewModel
-                {
-                    Password = model.Password,
-                    RememberMe = false,
-                    Username = model.Username
-                };
+                #region METODOS PARA REGISTRAR USUARIOS SIN CONFIRMACIÓN DE EMAIL
+                //LoginViewModel loginViewModel = new LoginViewModel
+                //{
+                //    Password = model.Password,
+                //    RememberMe = false,
+                //    Username = model.Username
+                //};
 
-                var result2 = await _userHelper.LoginAsync(loginViewModel);
+                //var result2 = await _userHelper.LoginAsync(loginViewModel);
 
-                if (result2.Succeeded)
+                //if (result2.Succeeded)
+                //{
+                //    return RedirectToAction("Index", "Home");
+                //}
+                #endregion
+
+                string myToken = await _userHelper.GenerateEmailConfirmationTokenAsync(user);
+                string tokenLink = Url.Action("ConfirmEmail", "Account", new
                 {
-                    return RedirectToAction("Index", "Home");
+                    userid = user.Id,
+                    token = myToken
+                }, protocol: HttpContext.Request.Scheme);
+
+                Response response = _mailHelper.SendMail(model.Username, "Email confirmation", $"<h1>Email Confirmation</h1>" +
+                    $"To allow the user, " +
+                    $"please click in this link:<br><p><a href = \"{tokenLink}\">Confirm Email</a></p>");
+                if (response.IsSuccess)
+                {
+                    ViewBag.Message = "The instructions to allow your user has been sent to email.";
+                    return View(model);
                 }
+
+                ModelState.AddModelError(string.Empty, response.Message);
+
+
             }
 
             model.Countries = _combosHelper.GetComboCountries();
@@ -285,6 +312,91 @@ namespace OnSale.Web.Controllers
 
         #endregion
 
+
+        public async Task<IActionResult> ConfirmEmail(string userId, string token)
+        {
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(token))
+            {
+                return NotFound();
+            }
+
+            User user = await _userHelper.GetUserAsync(new Guid(userId));
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            IdentityResult result = await _userHelper.ConfirmEmailAsync(user, token);
+            if (!result.Succeeded)
+            {
+                return NotFound();
+            }
+
+            return View();
+        }
+
+
+        #region METODOS PARA RECUPERACIÓN DE PASSWORD
+        public IActionResult RecoverPassword()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> RecoverPassword(RecoverPasswordViewModel model)
+        {
+            if (ModelState.IsValid)
+            {
+                User user = await _userHelper.GetUserAsync(model.Email);
+                if (user == null)
+                {
+                    ModelState.AddModelError(string.Empty, "The email doesn't correspont to a registered user.");
+                    return View(model);
+                }
+
+                string myToken = await _userHelper.GeneratePasswordResetTokenAsync(user);
+                string link = Url.Action(
+                    "ResetPassword",
+                    "Account",
+                    new { token = myToken }, protocol: HttpContext.Request.Scheme);
+                _mailHelper.SendMail(model.Email, "Password Reset", $"<h1>Password Reset</h1>" +
+                    $"To reset the password click in this link:</br></br>" +
+                    $"<a href = \"{link}\">Reset Password</a>");
+                ViewBag.Message = "The instructions to recover your password has been sent to email.";
+                return View();
+
+            }
+
+            return View(model);
+        }
+
+        public IActionResult ResetPassword(string token)
+        {
+            return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+        {
+            User user = await _userHelper.GetUserAsync(model.UserName);
+            if (user != null)
+            {
+                IdentityResult result = await _userHelper.ResetPasswordAsync(user, model.Token, model.Password);
+                if (result.Succeeded)
+                {
+                    ViewBag.Message = "Password reset successful.";
+                    return View();
+                }
+
+                ViewBag.Message = "Error while resetting the password.";
+                return View(model);
+            }
+
+            ViewBag.Message = "User not found.";
+            return View(model);
+        }
+
+        #endregion
     }
 
 }

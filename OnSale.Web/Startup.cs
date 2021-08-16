@@ -37,7 +37,7 @@ namespace OnSale.Web
 
             });
 
-            //servicio para ruta no autorixada
+            //servicio para ruta no autorizada
             services.ConfigureApplicationCookie(options =>
             {
                 options.LoginPath = "/Account/NotAuthorized";
@@ -76,17 +76,24 @@ namespace OnSale.Web
             services.AddScoped<ICombosHelper, CombosHelper>();
             //inyectamos el IuserHelper
             services.AddScoped<IUserHelper, UserHelper>();
+            //servicio de correo de recuperacion de contraseña
+            services.AddScoped<IMailHelper, MailHelper>();
 
             //Servicios para trabajar con roles y usuarios
             services.AddIdentity<User, IdentityRole>(cfg =>
             {
+                //vamos a tener un token provider
+                cfg.Tokens.AuthenticatorTokenProvider = TokenOptions.DefaultAuthenticatorProvider;
+                cfg.SignIn.RequireConfirmedEmail = true;//requiere un correo confirmado
                 cfg.User.RequireUniqueEmail = true;//tener un unico email
                 cfg.Password.RequireDigit = false;//que mi pass tenga digitos?no
                 cfg.Password.RequiredUniqueChars = 0;//que tenga caracter unico?no
                 cfg.Password.RequireLowercase = false;//que tenga una minuscula?no
                 cfg.Password.RequireNonAlphanumeric = false;//que tanga un alfanumerico?no
                 cfg.Password.RequireUppercase = false;//que tenga una mayuscula?no
-            }).AddEntityFrameworkStores<DataContext>();
+            })
+                 .AddDefaultTokenProviders()//llama a TokenProviders
+                .AddEntityFrameworkStores<DataContext>();
         }
 
 
