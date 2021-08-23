@@ -21,7 +21,9 @@ namespace OnSale.Web.Controllers.API
         public IActionResult GetProducts()
         {
             return Ok(_context.Products.Include(p=>p.Category)
-                              .Include(p=>p.ProductImages).Where(p=>p.IsActive));
+                                        .Include(p=>p.ProductImages)
+                                        .OrderBy(p=>p.Name)
+                                        .Where(p=>p.IsActive));
         }
 
 
